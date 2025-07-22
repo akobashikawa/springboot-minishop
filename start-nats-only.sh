@@ -41,13 +41,13 @@ fi
 docker network create mini-shop-dev-net 2>/dev/null || true
 
 # Iniciar NATS
-echo "🔄 Iniciando NATS en puerto 8422..."
+echo "🔄 Iniciando NATS en puerto 4222..."
 docker run -d \
     --name mini-shop-nats \
     --network mini-shop-dev-net \
-    -p 8422:4222 \
-    -p 8423:8222 \
-    -p 8424:6222 \
+    -p 4222:4222 \
+    -p 8222:8222 \
+    -p 6222:6222 \
     nats:2.10-alpine \
     --http_port 8222 \
     --name mini-shop-nats-standalone \
@@ -58,12 +58,12 @@ echo "⏳ Esperando que NATS esté listo..."
 sleep 5
 
 # Verificar que NATS está funcionando
-if curl -s http://localhost:8423/healthz > /dev/null; then
+if curl -s http://localhost:8222/healthz > /dev/null; then
     echo "✅ NATS está corriendo correctamente!"
     echo ""
     echo "🌐 Accesos disponibles:"
-    echo "  • NATS Client:    nats://localhost:8422"
-    echo "  • NATS Monitor:   http://localhost:8423"
+    echo "  • NATS Client:    nats://localhost:4222"
+    echo "  • NATS Monitor:   http://localhost:8222"
     echo ""
     echo "🔧 Para desarrollar con este NATS:"
     echo "  export SPRING_PROFILES_ACTIVE=local-with-docker-nats"

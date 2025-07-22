@@ -224,7 +224,7 @@ echo   • Orders Service:        http://localhost/orders-app
 echo   • Products Service:      http://localhost/products
 echo   • Notifications Service: http://localhost/notifications-app
 echo   • H2 Console:           http://localhost/h2-console
-echo   • NATS Monitoring:      http://localhost:8423
+echo   • NATS Monitoring:      http://localhost:8222
 echo.
 echo 🔍 Health Checks:
 echo   • General:              http://localhost/health

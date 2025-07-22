@@ -12,7 +12,7 @@ spring:
 
 # NATS Configuration para conectar desde fuera de Docker
 nats:
-  url: nats://localhost:8422  # Puerto externo del NATS en Docker
+  url: nats://localhost:4222  # Puerto externo del NATS en Docker
   connection:
     timeout: 5000
     max-reconnect: 60

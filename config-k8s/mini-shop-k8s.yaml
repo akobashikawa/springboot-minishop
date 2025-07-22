@@ -1,0 +1,639 @@
+# mini-shop-k8s.yaml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mini-shop
+---
+# ========================================
+# 1. NATS Server (Message Broker)
+# ========================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nats-server
+  namespace: mini-shop
+  labels:
+    app: nats-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nats-server
+  template:
+    metadata:
+      labels:
+        app: nats-server
+    spec:
+      containers:
+      - name: nats
+        image: nats:2.10-alpine
+        ports:
+        - containerPort: 4222 # Client port
+        - containerPort: 8222 # HTTP Monitoring port
+        - containerPort: 6222 # Cluster port (if clustering NATS)
+        command:
+          - nats-server
+          - "--http_port"
+          - "8222"
+          - "--name"
+          - "mini-shop-nats-dedicated"
+          - "--server_name"
+          - "mini-shop-instance"
+        volumeMounts:
+        - name: nats-data-volume
+          mountPath: /data
+        livenessProbe: # Checks if the container is still running
+          httpGet:
+            path: /healthz
+            port: 8222
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe: # Checks if the container is ready to serve requests
+          httpGet:
+            path: /healthz
+            port: 8222
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+      volumes:
+      - name: nats-data-volume
+        persistentVolumeClaim:
+          claimName: nats-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nats-server-svc
+  namespace: mini-shop
+  labels:
+    app: nats-server
+spec:
+  selector:
+    app: nats-server
+  ports:
+    - name: client
+      protocol: TCP
+      port: 4222
+      targetPort: 4222
+    - name: http-monitor
+      protocol: TCP
+      port: 8222
+      targetPort: 8222
+    - name: cluster
+      protocol: TCP
+      port: 6222
+      targetPort: 6222
+  type: ClusterIP # Internal to the cluster
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nats-data-pvc
+  namespace: mini-shop
+spec:
+  accessModes:
+    - ReadWriteOnce # This assumes a single-node setup or a PV provisioner
+  resources:
+    requests:
+      storage: 1Gi # Adjust storage as needed for NATS data
+---
+# ========================================
+# 2. Orders Service
+# ========================================
+# ConfigMap for orders-service configuration
+# Replace the data with the actual content of your orders-service/config files
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orders-service-config
+  namespace: mini-shop
+data:
+  # Example: application.properties or application-docker.properties content
+  # config.properties: |
+  #   spring.application.name=orders-service
+  #   nats.url=nats://nats-server-svc:4222 # Connect to NATS via its Kubernetes Service
+  #   # ... other configurations
+  # You'll need to create application.properties or similar files in your local config directory
+  # and then manually add their content here, or use `kubectl create configmap --from-file`
+  application.properties: |-
+    spring.profiles.active=docker
+    spring.application.name=orders-service
+    management.endpoints.web.exposure.include=health,info,metrics
+    management.endpoint.health.show-details=always
+    nats.url=nats://nats-server-svc:4222 # Connect to NATS via its Kubernetes Service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-service
+  namespace: mini-shop
+  labels:
+    app: orders-service
+spec:
+  replicas: 1 # Start with 1 replica, scale up later if needed
+  selector:
+    matchLabels:
+      app: orders-service
+  template:
+    metadata:
+      labels:
+        app: orders-service
+    spec:
+      containers:
+      - name: orders-service
+        image: 52.168.134.57:31996/mini-shop-orders-service:latest # <--- REPLACE IMAGE
+        ports:
+        - containerPort: 8081
+        env:
+        - name: JAVA_OPTS
+          value: "-Xmx512m -Xms256m"
+        # SPRING_PROFILES_ACTIVE is set via ConfigMap mounted as a file
+        volumeMounts:
+        - name: orders-config-volume
+          mountPath: /app/config # Mount ConfigMap here
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8081
+          initialDelaySeconds: 60 # Increased start_period
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8081
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+      volumes:
+      - name: orders-config-volume
+        configMap:
+          name: orders-service-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-service-svc
+  namespace: mini-shop
+  labels:
+    app: orders-service
+spec:
+  selector:
+    app: orders-service
+  ports:
+    - protocol: TCP
+      port: 8081
+      targetPort: 8081
+  type: ClusterIP # Internal to the cluster
+---
+# ========================================
+# 3. Products Service
+# ========================================
+# ConfigMap for products-service configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: products-service-config
+  namespace: mini-shop
+data:
+  application.properties: |-
+    spring.profiles.active=docker
+    spring.application.name=products-service
+    nats.url=nats://nats-server-svc:4222 # Connect to NATS via its Kubernetes Service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: products-service
+  namespace: mini-shop
+  labels:
+    app: products-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: products-service
+  template:
+    metadata:
+      labels:
+        app: products-service
+    spec:
+      containers:
+      - name: products-service
+        image: 52.168.134.57:31996/mini-shop-products-service:latest # <--- REPLACE IMAGE
+        ports:
+        - containerPort: 8082
+        env:
+        - name: JAVA_OPTS
+          value: "-Xmx512m -Xms256m"
+        volumeMounts:
+        - name: products-config-volume
+          mountPath: /app/config
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8082
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8082
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+      volumes:
+      - name: products-config-volume
+        configMap:
+          name: products-service-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: products-service-svc
+  namespace: mini-shop
+  labels:
+    app: products-service
+spec:
+  selector:
+    app: products-service
+  ports:
+    - protocol: TCP
+      port: 8082
+      targetPort: 8082
+  type: ClusterIP
+---
+# ========================================
+# 4. Notifications Service
+# ========================================
+# ConfigMap for notifications-service configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notifications-service-config
+  namespace: mini-shop
+data:
+  application.properties: |-
+    spring.profiles.active=docker
+    spring.application.name=notifications-service
+    nats.url=nats://nats-server-svc:4222 # Connect to NATS via its Kubernetes Service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notifications-service
+  namespace: mini-shop
+  labels:
+    app: notifications-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notifications-service
+  template:
+    metadata:
+      labels:
+        app: notifications-service
+    spec:
+      containers:
+      - name: notifications-service
+        image: 52.168.134.57:31996/mini-shop-notifications-service:latest # <--- REPLACE IMAGE
+        ports:
+        - containerPort: 8083
+        env:
+        - name: JAVA_OPTS
+          value: "-Xmx512m -Xms256m"
+        volumeMounts:
+        - name: notifications-config-volume
+          mountPath: /app/config
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8083
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8083
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+      volumes:
+      - name: notifications-config-volume
+        configMap:
+          name: notifications-service-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notifications-service-svc
+  namespace: mini-shop
+  labels:
+    app: notifications-service
+spec:
+  selector:
+    app: notifications-service
+  ports:
+    - protocol: TCP
+      port: 8083
+      targetPort: 8083
+  type: ClusterIP
+---
+# ========================================
+# 5. Nginx (Reverse Proxy y Load Balancer)
+# ========================================
+# ConfigMap for Nginx configuration files
+# You MUST replace the data with your actual nginx.conf, proxy_params, etc.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: mini-shop
+data:
+  # nginx.conf (or default.conf if you put it in conf.d)
+  nginx.conf: |
+    user nginx;
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /var/run/nginx.pid;
+
+    events {
+        worker_connections 1024;
+        use epoll;
+        multi_accept on;
+    }
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+
+        # Logging
+        log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                        '$status $body_bytes_sent "$http_referer" '
+                        '"$http_user_agent" "$http_x_forwarded_for"';
+        
+        access_log /var/log/nginx/access.log main;
+
+        # Performance
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+        keepalive_timeout 65;
+        types_hash_max_size 2048;
+        client_max_body_size 16M;
+
+        # Gzip
+        gzip on;
+        gzip_vary on;
+        gzip_min_length 1024;
+        gzip_types
+            text/plain
+            text/css
+            text/xml
+            text/javascript
+            application/javascript
+            application/xml+rss
+            application/json;
+
+        # Include additional configurations
+        include /etc/nginx/conf.d/*.conf;
+    }
+  
+  # proxy_params (from your ./nginx/proxy_params)
+  proxy_params: |
+    # nginx/proxy_params
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port $server_port;
+
+    # Timeouts
+    proxy_connect_timeout 60s;
+    proxy_send_timeout 60s;
+    proxy_read_timeout 60s;
+
+    # Buffering
+    proxy_buffering on;
+    proxy_buffer_size 4k;
+    proxy_buffers 8 4k;
+
+    # WebSocket support
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+
+    # Disable proxy redirect
+    proxy_redirect off;
+
+    # Handle large client requests
+    client_max_body_size 10M;
+
+    # Compression
+    gzip on;
+    gzip_types text/plain application/json application/javascript text/css;
+
+  # index.html (from your ./nginx/html/index.html - basic example)
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Mini-Shop - Microservices</title>
+        <style>
+            body { 
+                font-family: Arial, sans-serif; 
+                margin: 40px; 
+                background: #f5f5f5; 
+            }
+            .container { 
+                max-width: 800px; 
+                margin: 0 auto; 
+                background: white; 
+                padding: 20px; 
+                border-radius: 8px; 
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+            }
+            h1 { color: #333; text-align: center; }
+            .service { 
+                margin: 20px 0; 
+                padding: 15px; 
+                border: 1px solid #ddd; 
+                border-radius: 5px; 
+            }
+            .service h3 { 
+                color: #2c3e50; 
+                margin-top: 0; 
+            }
+            a { 
+                color: #3498db; 
+                text-decoration: none; 
+            }
+            a:hover { 
+                text-decoration: underline; 
+            }
+            .status { 
+                display: inline-block; 
+                padding: 4px 8px; 
+                border-radius: 4px; 
+                font-size: 12px; 
+            }
+            .running { 
+                background: #d4edda; 
+                color: #155724; 
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🛍️ Mini-Shop Microservices</h1>
+            <p>Bienvenido al sistema de microservicios Mini-Shop desplegado en Docker Swarm</p>
+            
+            <div class="service">
+                <h3>📦 Orders Service <span class="status running">RUNNING</span></h3>
+                <p>Gestión de pedidos y órdenes</p>
+                <ul>
+                    <li><a href="/orders" target="_blank">API Orders</a></li>
+                    <li><a href="/orders-app/" target="_blank">Orders App</a></li>
+                    <li><a href="/health/orders" target="_blank">Health Check</a></li>
+                </ul>
+            </div>
+            
+            <div class="service">
+                <h3>🛒 Products Service <span class="status running">RUNNING</span></h3>
+                <p>Catálogo y gestión de productos</p>
+                <ul>
+                    <li><a href="/products" target="_blank">API Products</a></li>
+                    <li><a href="/products-app/" target="_blank">Products App</a></li>
+                    <li><a href="/health/products" target="_blank">Health Check</a></li>
+                </ul>
+            </div>
+            
+            <div class="service">
+                <h3>🔔 Notifications Service <span class="status running">RUNNING</span></h3>
+                <p>Sistema de notificaciones</p>
+                <ul>
+                    <li><a href="/notifications" target="_blank">API Notifications</a></li>
+                    <li><a href="/notifications-app/" target="_blank">Notifications App</a></li>
+                    <li><a href="/health/notifications" target="_blank">Health Check</a></li>
+                </ul>
+            </div>
+            
+            <div class="service">
+                <h3>💾 Database Console</h3>
+                <p>Consola de base de datos H2</p>
+                <ul>
+                    <li><a href="/h2-console" target="_blank">H2 Console</a></li>
+                </ul>
+            </div>
+            
+            <div class="service">
+                <h3>🔍 System Health</h3>
+                <p>Estado general del sistema</p>
+                <ul>
+                    <li><a href="/health" target="_blank">System Health</a></li>
+                    <li><a href="http://localhost:8222" target="_blank">NATS Monitoring</a></li>
+                </ul>
+            </div>
+        </div>
+    </body>
+    </html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: mini-shop
+  labels:
+    app: nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80 # Nginx listens on 80 internally
+        volumeMounts:
+        - name: nginx-config-volume
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf # Mount specific file from ConfigMap
+        - name: nginx-config-volume
+          mountPath: /etc/nginx/proxy_params
+          subPath: proxy_params
+        - name: nginx-config-volume
+          mountPath: /usr/share/nginx/html/index.html
+          subPath: index.html
+      volumes:
+      - name: nginx-config-volume
+        configMap:
+          name: nginx-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-svc
+  namespace: mini-shop
+  labels:
+    app: nginx
+spec:
+  selector:
+    app: nginx
+  ports:
+    - protocol: TCP
+      port: 8088 # External port for the Ingress
+      targetPort: 80 # Nginx internal port
+  type: ClusterIP # Will be exposed via Ingress
+---
+# ========================================
+# 6. Ingress for Nginx (External Access)
+# ========================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mini-shop-ingress
+  namespace: mini-shop
+  annotations:
+    kubernetes.io/ingress.class: traefik # Assuming Traefik is your Ingress Controller (default for K3s)
+    # traefik.ingress.kubernetes.io/router.entrypoints: web,websecure # If you use HTTPS
+    # traefik.ingress.kubernetes.io/router.tls: "true" # If you use HTTPS
+    # You might want to add more Traefik specific annotations here for advanced routing or TLS
+spec:
+  rules:
+  - #host: mini-shop.example.com # <--- REPLACE with your domain, or remove this line to use directly with VM IP
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: nginx-svc # Points to your Nginx Service
+            port:
+              number: 8088
+  # If you remove the 'host' rule, you might want to use a default backend for wildcard access
+  # defaultBackend:
+  #   service:
+  #     name: nginx-svc
+  #     port:
+  #       number: 8088

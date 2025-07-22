@@ -32,13 +32,13 @@ REM Crear red si no existe
 docker network create mini-shop-dev-net 2>nul
 
 REM Iniciar NATS
-echo 🔄 Iniciando NATS en puerto 8422...
+echo 🔄 Iniciando NATS en puerto 4222...
 docker run -d ^
     --name mini-shop-nats ^
     --network mini-shop-dev-net ^
-    -p 8422:4222 ^
-    -p 8423:8222 ^
-    -p 8424:6222 ^
+    -p 4222:4222 ^
+    -p 8222:8222 ^
+    -p 6222:6222 ^
     nats:2.10-alpine ^
     --http_port 8222 ^
     --name mini-shop-nats-standalone ^
@@ -49,13 +49,13 @@ echo ⏳ Esperando que NATS esté listo...
 timeout /t 5 /nobreak >nul
 
 REM Verificar que NATS está funcionando
-curl -s http://localhost:8423/healthz >nul 2>&1
+curl -s http://localhost:8222/healthz >nul 2>&1
 if not errorlevel 1 (
     echo ✅ NATS está corriendo correctamente!
     echo.
     echo 🌐 Accesos disponibles:
-    echo   • NATS Client:    nats://localhost:8422
-    echo   • NATS Monitor:   http://localhost:8423
+    echo   • NATS Client:    nats://localhost:4222
+    echo   • NATS Monitor:   http://localhost:8222
     echo.
     echo 🔧 Para desarrollar con este NATS:
     echo   set SPRING_PROFILES_ACTIVE=local-with-docker-nats

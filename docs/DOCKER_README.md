@@ -9,7 +9,7 @@
 📦 Products Service (Puerto 8082)  
 📦 Notifications Service (Puerto 8083)
     ↓
-📡 NATS Server Dedicado (Puerto 8422)
+📡 NATS Server Dedicado (Puerto 4222)
 ```
 
 ---
@@ -94,8 +94,8 @@ make clean
 | **Products** | 8082 | http://localhost/products | API de productos |
 | **Notifications** | 8083 | http://localhost/notifications-app | Interfaz de notificaciones |
 | **H2 Console** | - | http://localhost/h2-console | Base de datos H2 |
-| **NATS Monitor** | 8423 | http://localhost:8423 | Monitoreo NATS (dedicado) |
-| **NATS Client** | 8422 | nats://localhost:8422 | Cliente NATS (dedicado) |
+| **NATS Monitor** | 8222 | http://localhost:8222 | Monitoreo NATS (dedicado) |
+| **NATS Client** | 4222 | nats://localhost:4222 | Cliente NATS (dedicado) |
 
 ---
 
@@ -215,10 +215,10 @@ docker-compose logs -f -t orders-service
 #### **Debug de NATS:**
 ```bash
 # Monitoring web de NATS (instancia dedicada)
-curl http://localhost:8423/connz
+curl http://localhost:8222/connz
 
 # Ver subjects activos
-curl http://localhost:8423/subsz
+curl http://localhost:8222/subsz
 ```
 
 ---
@@ -323,9 +323,9 @@ Tu Mini-Shop ahora usa una **instancia separada de NATS** en puertos diferentes:
 
 | **Servicio** | **Puerto Externo** | **Puerto Interno** | **Uso** |
 |--------------|-------------------|-------------------|---------|
-| **NATS Client** | 8422 | 4222 | Conexiones de aplicaciones |
-| **NATS Monitor** | 8423 | 8222 | Web UI de monitoreo |
-| **NATS Cluster** | 8424 | 6222 | Comunicación cluster |
+| **NATS Client** | 4222 | 4222 | Conexiones de aplicaciones |
+| **NATS Monitor** | 8222 | 8222 | Web UI de monitoreo |
+| **NATS Cluster** | 6222 | 6222 | Comunicación cluster |
 
 ### **Opciones de Desarrollo:**
 
@@ -359,16 +359,16 @@ make dev-up
 
 ```bash
 # Health check
-curl http://localhost:8423/healthz
+curl http://localhost:8222/healthz
 
 # Ver conexiones
-curl http://localhost:8423/connz
+curl http://localhost:8222/connz
 
 # Ver subjects activos
-curl http://localhost:8423/subsz
+curl http://localhost:8222/subsz
 
 # Monitoreo web
-open http://localhost:8423
+open http://localhost:8222
 ```
 
 ---
@@ -474,8 +474,8 @@ sudo ufw allow 8088
 sudo ufw allow 8081
 sudo ufw allow 8082
 sudo ufw allow 8083
-sudo ufw allow 8422
-sudo ufw allow 8423
+sudo ufw allow 4222
+sudo ufw allow 8222
 ```
 
 ---

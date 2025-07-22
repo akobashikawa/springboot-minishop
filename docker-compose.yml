@@ -10,9 +10,9 @@ services:
     image: nats:2.10-alpine
     container_name: mini-shop-nats
     ports:
-      - "8422:4222"      # NATS Client Port (puerto externo 8422)
-      - "8423:8222"      # HTTP Monitoring Port (puerto externo 8423)
-      - "8424:6222"      # Cluster Port (puerto externo 8424)
+      - "4222:4222"      # NATS Client Port (puerto externo 4222)
+      - "8222:8222"      # HTTP Monitoring Port (puerto externo 8222)
+      - "6222:6222"      # Cluster Port (puerto externo 6222)
     command: 
       - "--http_port"
       - "8222"

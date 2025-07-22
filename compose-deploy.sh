@@ -126,7 +126,7 @@ verify_deployment() {
     sleep 30
     
     # Verificar cada servicio - usando puerto 8088 para nginx
-    services=("localhost:8088/health" "nats-server:8423/healthz" "orders-service:8081/actuator/health" "products-service:8082/actuator/health" "notifications-service:8083/actuator/health")
+    services=("localhost:8088/health" "nats-server:8222/healthz" "orders-service:8081/actuator/health" "products-service:8082/actuator/health" "notifications-service:8083/actuator/health")
     
     for service_endpoint in "${services[@]}"; do
         if [[ "$service_endpoint" == localhost* ]]; then
@@ -165,7 +165,7 @@ show_info() {
     echo "  • Products Service:      http://localhost:8088/products-app"
     echo "  • Notifications Service: http://localhost:8088/notifications-app"
     echo "  • H2 Console:           http://localhost:8088/h2-console"
-    echo "  • NATS Monitoring:      http://localhost:8423"
+    echo "  • NATS Monitoring:      http://localhost:8222"
     echo ""
     echo "🔍 Health Checks:"
     echo "  • General:              http://localhost:8088/health"

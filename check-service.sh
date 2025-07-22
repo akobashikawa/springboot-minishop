@@ -34,7 +34,7 @@ check_service() {
 
 case "$1" in
     "nats")
-        check_service "nats-server" "8423" "healthz"
+        check_service "nats-server" "8222" "healthz"
         ;;
     "orders")
         check_service "orders-service" "8081"
