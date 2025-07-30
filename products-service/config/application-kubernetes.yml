@@ -1,0 +1,68 @@
+# Configuración Docker para products-service
+server:
+  port: 8082
+
+spring:
+  application:
+    name: products-service
+  web:
+    resources:
+      static-locations:
+      - file:/app/public/
+      - classpath:/static/
+      - classpath:/public/
+
+# NATS Configuration para Docker (instancia dedicada)
+nats:
+  url: nats://nats-server-svc:4222  # Puerto interno del contenedor (sigue siendo 4222)
+  connection:
+    timeout: 5000               # Aumentar timeout para Docker
+    max-reconnect: 60
+    reconnect-wait: 3000        # Aumentar espera de reconexión
+    ping-interval: 120000
+    cleanup-interval: 30000
+  consumer:
+    max-deliver: 3
+    ack-wait: 30000
+  producer:
+    max-pending: 1000
+    timeout: 5000               # Aumentar timeout
+  cluster:
+    enabled: false
+
+
+# Configuración de subjects para el servicio de productos
+messaging:
+  subjects:
+    products:
+      created: "products.created"
+      updated: "products.updated"
+      deleted: "products.deleted"
+      inventory-check: "products.inventory.check"
+      inventory-update: "products.inventory.update"
+      low-stock: "products.stock.low"
+    orders:
+      created: "orders.created"
+      updated: "orders.updated"
+      cancelled: "orders.cancelled"
+    notifications:
+      send: "notifications.send"
+
+# Configuración de logs para Docker
+logging:
+  level:
+    '[com.minishop]': INFO
+    '[org.springframework]': WARN
+    root: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+
+# Actuator para health checks
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always

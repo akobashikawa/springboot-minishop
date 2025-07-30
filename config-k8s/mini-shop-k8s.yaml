@@ -115,16 +115,25 @@ data:
   # Example: application.properties or application-docker.properties content
   # config.properties: |
   #   spring.application.name=orders-service
-  #   nats.url=nats://nats-server-svc:4222 # Connect to NATS via its Kubernetes Service
+  #   nats.url=nats://nats-server-svc:4222
   #   # ... other configurations
   # You'll need to create application.properties or similar files in your local config directory
   # and then manually add their content here, or use `kubectl create configmap --from-file`
   application.properties: |-
-    spring.profiles.active=docker
+    spring.profiles.active=kubernetes
     spring.application.name=orders-service
+    server.port=8081
     management.endpoints.web.exposure.include=health,info,metrics
     management.endpoint.health.show-details=always
-    nats.url=nats://nats-server-svc:4222 # Connect to NATS via its Kubernetes Service
+    management.endpoint.health.probes.enabled=true
+    management.health.livenessState.enabled=true
+    management.health.readinessState.enabled=true
+    nats.url=nats://nats-server-svc:4222
+    nats.connection.timeout=10000
+    nats.connection.max-reconnect=60
+    nats.connection.reconnect-wait=3000
+    logging.level.com.minishop=INFO
+    logging.level.root=INFO
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -145,7 +154,9 @@ spec:
     spec:
       containers:
       - name: orders-service
-        image: 52.168.134.57:31996/mini-shop-orders-service:latest # <--- REPLACE IMAGE
+        # image: 52.168.134.57:31996/mini-shop-orders-service:latest
+        image: mini-shop/orders-service:latest
+        imagePullPolicy: Never  # Use local image, don't pull from registry
         ports:
         - containerPort: 8081
         env:
@@ -203,9 +214,12 @@ metadata:
   namespace: mini-shop
 data:
   application.properties: |-
-    spring.profiles.active=docker
+    spring.profiles.active=kubernetes
     spring.application.name=products-service
-    nats.url=nats://nats-server-svc:4222 # Connect to NATS via its Kubernetes Service
+    server.port=8082
+    management.endpoints.web.exposure.include=health,info,metrics
+    management.endpoint.health.show-details=always
+    nats.url=nats://nats-server-svc:4222
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -226,7 +240,9 @@ spec:
     spec:
       containers:
       - name: products-service
-        image: 52.168.134.57:31996/mini-shop-products-service:latest # <--- REPLACE IMAGE
+        # image: 52.168.134.57:31996/mini-shop-products-service:latest
+        image: mini-shop/products-service:latest
+        imagePullPolicy: Never  # Use local image, don't pull from registry
         ports:
         - containerPort: 8082
         env:
@@ -283,9 +299,12 @@ metadata:
   namespace: mini-shop
 data:
   application.properties: |-
-    spring.profiles.active=docker
+    spring.profiles.active=kubernetes
     spring.application.name=notifications-service
-    nats.url=nats://nats-server-svc:4222 # Connect to NATS via its Kubernetes Service
+    server.port=8083
+    management.endpoints.web.exposure.include=health,info,metrics
+    management.endpoint.health.show-details=always
+    nats.url=nats://nats-server-svc:4222
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -306,7 +325,9 @@ spec:
     spec:
       containers:
       - name: notifications-service
-        image: 52.168.134.57:31996/mini-shop-notifications-service:latest # <--- REPLACE IMAGE
+        # image: 52.168.134.57:31996/mini-shop-notifications-service:latest
+        image: mini-shop/notifications-service:latest
+        imagePullPolicy: Never  # Use local image, don't pull from registry
         ports:
         - containerPort: 8083
         env:
@@ -363,90 +384,74 @@ metadata:
   name: nginx-config
   namespace: mini-shop
 data:
-  # nginx.conf (or default.conf if you put it in conf.d)
-  nginx.conf: |
-    user nginx;
-    worker_processes auto;
-    error_log /var/log/nginx/error.log warn;
-    pid /var/run/nginx.pid;
+  default.conf: |
+    # Server configuration
+    server {
+        listen 80;
+        server_name localhost;
 
-    events {
-        worker_connections 1024;
-        use epoll;
-        multi_accept on;
+        # Resolver DNS para Kubernetes
+        resolver kube-dns.kube-system.svc.cluster.local valid=30s;
+
+        # Root directory for static files
+        root /usr/share/nginx/html;
+        index index.html;
+
+        # API Endpoints
+        location /orders {
+            proxy_pass http://orders-service-svc:8081;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        location /products {
+            proxy_pass http://products-service-svc:8082;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        location /notifications {
+            proxy_pass http://notifications-service-svc:8083;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # Health Checks
+        location /health {
+            return 200 "Mini-Shop OK\n";
+            add_header Content-Type text/plain;
+        }
+
+        location /health/orders {
+            proxy_pass http://orders-service-svc:8081/actuator/health;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+
+        location /health/products {
+            proxy_pass http://products-service-svc:8082/actuator/health;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+
+        location /health/notifications {
+            proxy_pass http://notifications-service-svc:8083/actuator/health;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+
+        # Static files - MUST BE LAST
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
     }
-    http {
-        include /etc/nginx/mime.types;
-        default_type application/octet-stream;
 
-        # Logging
-        log_format main '$remote_addr - $remote_user [$time_local] "$request" '
-                        '$status $body_bytes_sent "$http_referer" '
-                        '"$http_user_agent" "$http_x_forwarded_for"';
-        
-        access_log /var/log/nginx/access.log main;
-
-        # Performance
-        sendfile on;
-        tcp_nopush on;
-        tcp_nodelay on;
-        keepalive_timeout 65;
-        types_hash_max_size 2048;
-        client_max_body_size 16M;
-
-        # Gzip
-        gzip on;
-        gzip_vary on;
-        gzip_min_length 1024;
-        gzip_types
-            text/plain
-            text/css
-            text/xml
-            text/javascript
-            application/javascript
-            application/xml+rss
-            application/json;
-
-        # Include additional configurations
-        include /etc/nginx/conf.d/*.conf;
-    }
-  
-  # proxy_params (from your ./nginx/proxy_params)
-  proxy_params: |
-    # nginx/proxy_params
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header X-Forwarded-Host $host;
-    proxy_set_header X-Forwarded-Port $server_port;
-
-    # Timeouts
-    proxy_connect_timeout 60s;
-    proxy_send_timeout 60s;
-    proxy_read_timeout 60s;
-
-    # Buffering
-    proxy_buffering on;
-    proxy_buffer_size 4k;
-    proxy_buffers 8 4k;
-
-    # WebSocket support
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
-
-    # Disable proxy redirect
-    proxy_redirect off;
-
-    # Handle large client requests
-    client_max_body_size 10M;
-
-    # Compression
-    gzip on;
-    gzip_types text/plain application/json application/javascript text/css;
-
-  # index.html (from your ./nginx/html/index.html - basic example)
   index.html: |
     <!DOCTYPE html>
     <html lang="es">
@@ -501,14 +506,13 @@ data:
     <body>
         <div class="container">
             <h1>🛍️ Mini-Shop Microservices</h1>
-            <p>Bienvenido al sistema de microservicios Mini-Shop desplegado en Docker Swarm</p>
+            <p>Bienvenido al sistema de microservicios Mini-Shop desplegado en Kubernetes</p>
             
             <div class="service">
                 <h3>📦 Orders Service <span class="status running">RUNNING</span></h3>
                 <p>Gestión de pedidos y órdenes</p>
                 <ul>
                     <li><a href="/orders" target="_blank">API Orders</a></li>
-                    <li><a href="/orders-app/" target="_blank">Orders App</a></li>
                     <li><a href="/health/orders" target="_blank">Health Check</a></li>
                 </ul>
             </div>
@@ -518,7 +522,6 @@ data:
                 <p>Catálogo y gestión de productos</p>
                 <ul>
                     <li><a href="/products" target="_blank">API Products</a></li>
-                    <li><a href="/products-app/" target="_blank">Products App</a></li>
                     <li><a href="/health/products" target="_blank">Health Check</a></li>
                 </ul>
             </div>
@@ -528,16 +531,7 @@ data:
                 <p>Sistema de notificaciones</p>
                 <ul>
                     <li><a href="/notifications" target="_blank">API Notifications</a></li>
-                    <li><a href="/notifications-app/" target="_blank">Notifications App</a></li>
                     <li><a href="/health/notifications" target="_blank">Health Check</a></li>
-                </ul>
-            </div>
-            
-            <div class="service">
-                <h3>💾 Database Console</h3>
-                <p>Consola de base de datos H2</p>
-                <ul>
-                    <li><a href="/h2-console" target="_blank">H2 Console</a></li>
                 </ul>
             </div>
             
@@ -546,7 +540,6 @@ data:
                 <p>Estado general del sistema</p>
                 <ul>
                     <li><a href="/health" target="_blank">System Health</a></li>
-                    <li><a href="http://localhost:8222" target="_blank">NATS Monitoring</a></li>
                 </ul>
             </div>
         </div>
@@ -574,19 +567,31 @@ spec:
       - name: nginx
         image: nginx:alpine
         ports:
-        - containerPort: 80 # Nginx listens on 80 internally
+        - containerPort: 80
         volumeMounts:
         - name: nginx-config-volume
-          mountPath: /etc/nginx/nginx.conf
-          subPath: nginx.conf # Mount specific file from ConfigMap
-        - name: nginx-config-volume
-          mountPath: /etc/nginx/proxy_params
-          subPath: proxy_params
-        - name: nginx-config-volume
+          mountPath: /etc/nginx/conf.d/default.conf
+          subPath: default.conf
+        - name: nginx-html-volume
           mountPath: /usr/share/nginx/html/index.html
           subPath: index.html
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
       volumes:
       - name: nginx-config-volume
+        configMap:
+          name: nginx-config
+      - name: nginx-html-volume
         configMap:
           name: nginx-config
 ---

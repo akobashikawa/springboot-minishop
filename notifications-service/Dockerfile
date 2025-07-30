@@ -5,7 +5,7 @@ FROM maven:3.8.5-openjdk-17-slim AS builder
 
 # Metadatos para la etapa de build (opcional, pero útil para referencia)
 LABEL maintainer="mini-shop"
-LABEL service="orders-service"
+LABEL service="notifications-service"
 LABEL stage="build"
 
 # Crear directorio de trabajo para el proyecto Maven
